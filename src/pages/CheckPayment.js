@@ -1,10 +1,13 @@
 
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Banner from '../components/BannerSlider';
 import backArrow from '../img/common/backarrow.png';
+import close from '../img/common/circleClose.png';
+import copy from '../img/common/copy.png';
 import bannerImg from '../img/home/bannerexample.png';
 import infoIcon from '../img/home/information.png';
+
 import '../styles/main.scss';
 
 export default function CheckPayment() {
@@ -14,6 +17,8 @@ export default function CheckPayment() {
     const movePage = (path) => {
         navigate(path);
     };
+    const location = useLocation();
+    const [selectedCoupon, setSelectedCoupon] = useState(location.state?.selectedCoupon || null);
 
     const bannerImages2 = [bannerImg, bannerImg, bannerImg];
 
@@ -22,12 +27,12 @@ export default function CheckPayment() {
             {/* 상단 바 */}
             <div className="top-bar">
                 <div className="top-bar-left">
-                    <img
-                        src={backArrow}
-                        alt="뒤로가기"
-                        className="icon24"
+                    <button
                         onClick={() => navigate(-1)}
-                    />
+                        style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}
+                    >
+                        <img src={backArrow} alt="뒤로가기" className="icon24" />
+                    </button>
                 </div>
                 <div className="top-bar-center">
                     <span className="top-txt font-noto">구매확인</span>
@@ -91,12 +96,28 @@ export default function CheckPayment() {
                             쿠폰선택
                         </button>
                     </div>
+                    <div className="info-row">
+                        {selectedCoupon &&
 
+                            <>
+                                <div className="info-text">{selectedCoupon.title}</div>
+
+                                <div className="info-img">
+                                    <img src={close} alt="쿠폰삭제" className="icon24"
+                                        style={{ cursor: 'pointer' }}
+                                        onClick={() => setSelectedCoupon(null)} />
+                                </div>
+                            </>
+                        }
+
+                    </div>
                     <hr className="dashed-line" />
 
                     <div className="info-row">
                         <span className="info-title">할인금액</span>
-                        <span className="info-text">5,000원</span>
+                        {selectedCoupon &&
+                            <span className="info-text">{selectedCoupon.amount}</span>
+                        }
                     </div>
                 </div>
             </div>
@@ -110,14 +131,42 @@ export default function CheckPayment() {
                     className={`payment-btn ${paymentMethod === 'card' ? 'active' : ''}`}
                     onClick={() => setPaymentMethod('card')}
                 >
-                    <span>신용/체크카드</span>
+                    <span className="payment-text">신용/체크카드</span>
                 </button>
                 <button
                     className={`payment-btn ${paymentMethod === 'bank' ? 'active' : ''}`}
                     onClick={() => setPaymentMethod('bank')}
                 >
-                    <span>무통장입금</span>
+                    <span className="payment-text">무통장입금</span>
                 </button>
+            </div>
+
+            {/* PC/대리인 결제 안내 */}
+            <div className="section2-title-box3">
+                <p className="note-text font-bm">
+                    PC, 대리인 결제도 가능해요!
+                </p>
+                <div className="copy-url-box">
+                    <span className="font-noto url-text">http://skasca.me/cash</span>
+                    <img src={copy} alt="info" className="icon14" />
+                    <span
+                        className="copy-btn"
+                        onClick={() => navigator.clipboard.writeText('http://skasca.me/cash')}
+                    >
+                        URL 복사
+                    </span>
+                </div>
+                <div className="line"></div>
+                {paymentMethod === 'card' ?
+                    <></>
+                    :
+                    <p className="atm-text">
+                        <b>‘ATM 기기’를 통한 무통장 입금은 지원되지 않아요.</b> <br />
+                        인터넷 뱅킹 또는 은행 창구를 통해 입금 부탁 드려요! <br /><br />
+                        <b>해외송금을 통해 무통장 입금 시 결제가 실패됩니다.</b><br />
+                        결제실패로 인한 환불 시 고객님께 해외송금 수수료가 청구될 수 있습니다.
+                    </p>
+                }
             </div>
 
             {/* 안내사항 */}
@@ -131,7 +180,7 @@ export default function CheckPayment() {
                 <p className="note-text font-noto">안내사항입니다.</p>
             </div>
             {/* 하단 결제 버튼 */}
-            <div className="bottom-bar">
+            <div className="bottom-bar2">
                 <span>결제금액</span>
                 <span>45,000원</span>
             </div>
