@@ -19,10 +19,16 @@ export default function CheckPayment() {
 
     const bannerImages2 = [bannerImg, bannerImg, bannerImg];
 
-    // RN이 주입한 데이터 받기
+    // RN이 주입한 정보
+    const SK = useMemo(() => window?.SKYSUNNY || {}, []);
+    const successUrl = useMemo(() => SK?.successUrl || 'skysunny://pay/success', [SK]);
+    const failUrl = useMemo(() => SK?.failUrl || 'skysunny://pay/fail', [SK]);
+
+    const movePage = (path) => navigate(path);
+
     useEffect(() => {
         const onInit = (e) => {
-            console.log('[CheckPayment] SKYSUNNY from RN:', e.detail);
+            console.log('[CheckPayment] RN에서 넘어온 데이터:', e.detail);
             setTicketInfo(e.detail);
         };
         document.addEventListener('skysunny:init', onInit);
@@ -30,7 +36,6 @@ export default function CheckPayment() {
         return () => document.removeEventListener('skysunny:init', onInit);
     }, []);
 
-    // 쿠폰 반영
     useEffect(() => {
         if ('selectedCoupon' in (location.state || {})) {
             setSelectedCoupon(location.state.selectedCoupon || null);
@@ -50,12 +55,53 @@ export default function CheckPayment() {
     const totalAmount = useMemo(() => Math.max(price - discount, 0), [price, discount]);
     const finalAmount = useMemo(() => totalAmount.toLocaleString() + '원', [totalAmount]);
 
-    // 구매하기 버튼
-    const onClickBuy = () => {
-        if (paymentMethod === 'card') {
-            navigate('/toss-payment');
-        } else {
-            navigate('/store-detail');
+    // RN 통해 임시주문 생성
+    const requestDraftViaRN = () =>
+        new Promise((resolve, reject) => {
+            if (typeof window.__askRN !== 'function') {
+                reject(new Error('RN bridge not found'));
+                return;
+            }
+
+            const passId =
+                SK?.selectedTicket?.passId ?? ticketInfo?.selectedTicket?.passId;
+            const targetId =
+                SK?.selectedTicket?.targetId ?? ticketInfo?.selectedTicket?.targetId ?? 0;
+            const type =
+                (SK?.passType ?? ticketInfo?.passType ?? 'cash');
+
+            if (!passId) {
+                reject(new Error('상품 ID(passId)가 없습니다.'));
+                return;
+            }
+
+            const once = (e) => {
+                const { action, ok, data, error } = e.detail || {};
+                if (action !== 'REQUEST_DRAFT') return;
+                window.removeEventListener('skysunny:reply', once);
+                if (ok && data?.orderNumber) resolve(data);
+                else reject(new Error(error || '임시 주문 생성 실패'));
+            };
+            window.addEventListener('skysunny:reply', once, { once: true });
+
+            console.log('[CheckPayment] REQUEST_DRAFT →', { passId, targetId, type });
+            window.__askRN('REQUEST_DRAFT', { passId, targetId, type });
+        });
+
+    const onClickBuy = async () => {
+        if (paymentMethod !== 'card') {
+            movePage('/store-detail');
+            return;
+        }
+        try {
+            const draft = await requestDraftViaRN(); // { orderNumber, amount, orderName ... }
+            sessionStorage.setItem('toss:draft', JSON.stringify(draft));
+            sessionStorage.setItem('toss:successUrl', successUrl);
+            sessionStorage.setItem('toss:failUrl', failUrl);
+            movePage('/toss-payment');
+        } catch (e) {
+            console.error('[CheckPayment] draft error:', e);
+            alert(e?.message || '주문 생성 중 오류가 발생했습니다.');
         }
     };
 
@@ -93,6 +139,7 @@ export default function CheckPayment() {
                     <div className="section-title-box">
                         <span className="font-bm section-title">구매정보</span>
                     </div>
+
                     <div className="info-box">
                         <div className="info-row"><span className="info-title">매장명</span><span className="info-text">{ticketInfo?.storeName || '-'}</span></div>
                         <div className="info-row"><span className="info-title">이용권</span><span className="info-text">{ticketInfo?.passType || '-'}</span></div>
@@ -107,22 +154,24 @@ export default function CheckPayment() {
 
                         <div className="info-row">
                             <span className="info-title">할인쿠폰</span>
-                            <button className="coupon-btn" onClick={() => navigate('/check-coupon')}>쿠폰선택</button>
+                            <button className="coupon-btn" onClick={() => movePage('/check-coupon')}>쿠폰선택</button>
                         </div>
-                        {selectedCoupon && (
-                            <div className="info-row">
-                                <div className="info-text">{selectedCoupon.title}</div>
-                                <div className="info-img">
-                                    <img
-                                        src={close}
-                                        alt="쿠폰삭제"
-                                        className="icon24"
-                                        style={{ cursor: 'pointer' }}
-                                        onClick={() => setSelectedCoupon(null)}
-                                    />
-                                </div>
-                            </div>
-                        )}
+                        <div className="info-row">
+                            {selectedCoupon && (
+                                <>
+                                    <div className="info-text">{selectedCoupon.title}</div>
+                                    <div className="info-img">
+                                        <img
+                                            src={close}
+                                            alt="쿠폰삭제"
+                                            className="icon24"
+                                            style={{ cursor: 'pointer' }}
+                                            onClick={() => setSelectedCoupon(null)}
+                                        />
+                                    </div>
+                                </>
+                            )}
+                        </div>
 
                         <hr className="dashed-line" />
 
@@ -152,7 +201,7 @@ export default function CheckPayment() {
                     </button>
                 </div>
 
-                {/* 안내 */}
+                {/* PC/대리인 결제 안내 */}
                 <div className="section2-title-box3">
                     <p className="note-text font-bm">PC, 대리인 결제도 가능해요!</p>
                     <div className="copy-url-box">
@@ -173,6 +222,7 @@ export default function CheckPayment() {
                     )}
                 </div>
 
+                {/* 안내사항 */}
                 <div className="section2-title-box">
                     <img src={infoIcon} alt="info" className="icon14" />
                     <div className="text-box">

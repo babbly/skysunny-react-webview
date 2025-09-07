@@ -91,6 +91,7 @@ $font26: 26px;
 /* 구매확인 페이지 */
 .container {
     width: 100%;
+    padding-bottom: 100px;
     // max-width: 360px;
     margin: 0 auto;
     background-color: $lightGray;
@@ -222,6 +223,37 @@ $font26: 26px;
 
         }
     }
+
+    /* 고정 푸터용 보조 변수 (필요 시 수치만 미세조정) */
+    .checkout-page {
+        /* .bottom-bar2(약 44px) + 간격 8px + .bottom-button(약 56px) */
+        --footer-h: 108px;
+    }
+
+    /* 본문만 스크롤: 화면 높이 - 하단 고정 높이 */
+    .content-scroll {
+        overflow: auto;
+        height: calc(100vh - var(--footer-h));
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* 하단 고정: 기존 .bottom-bar2 / .bottom-button 스타일은 그대로 사용 */
+    .checkout-footer-fixed {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #fff;
+        z-index: 100;
+        box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.04);
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    /* 스크롤 여백: 고정 영역만큼 확보 */
+    .scroll-spacer {
+        height: var(--footer-h);
+    }
+
 
     /* 안내사항 */
     .section2-title-box {
@@ -635,7 +667,7 @@ $font26: 26px;
 .bottom-bar {
     position: fixed;
     bottom: 0;
-    width: 360px;
+    width: 100vw;
     height: 52px;
     background-color: $mainColor;
     display: flex;
@@ -666,8 +698,9 @@ $font26: 26px;
 
 .qr-header {
     height: 290px;
-    width: 360px;
+    width: 100vw;
     background-color: $mainColor;
+
 
     .qr-header-inner {
         padding: 40px 15px 0;
