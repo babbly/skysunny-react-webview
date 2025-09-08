@@ -1,64 +1,113 @@
 // src/web/CompletePayment.jsx
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import infoIcon from "../img/home/payment.png";
 import '../styles/main.scss';
 
+// 간단한 금액 포맷터
+const toMoney = (v) => {
+    const n = Number(String(v ?? '').replace(/[^\d.-]/g, ''));
+    return Number.isFinite(n) ? `${n.toLocaleString()}원` : (v ?? '-');
+};
+
+// YYYY-MM-DD HH:mm 포맷
+const formatDateTime = (d = new Date()) => {
+    const pad = (x) => String(x).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const mm = pad(d.getMonth() + 1);
+    const dd = pad(d.getDate());
+    const hh = pad(d.getHours());
+    const mi = pad(d.getMinutes());
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+};
+
+// URL 쿼리 파싱 유틸
+const getQuery = () => {
+    if (typeof window === 'undefined') return {};
+    const q = new URLSearchParams(window.location.search);
+    return {
+        storeName: q.get('storeName') || undefined,
+        passType: q.get('passType') || undefined,
+        desc: q.get('desc') || q.get('description') || undefined,
+        amount: q.get('amount') || undefined,
+        orderNumber: q.get('orderNumber') || undefined,
+        date: q.get('date') || undefined,
+    };
+};
+
 export default function CompletePayment() {
-    const [orderNumber, setOrderNumber] = useState(null);
+    // 1) URL 쿼리 → 2) window.SKYSUNNY → 3) 목업 값
+    const ctx = useMemo(() => {
+        const q = getQuery();
+        const SK = (typeof window !== 'undefined' && window.SKYSUNNY) || {};
 
-    // RN에서 주입된 공통값
-    const SK = useMemo(() => window?.SKYSUNNY || {}, []);
-    const defaultStoreId = useMemo(() => SK?.storeId || 1, [SK]);
+        const storeName =
+            q.storeName ??
+            SK.storeName ??
+            '스카이써니 스터디카페';
 
-    // RN 완료 신호 수신 → 주문번호 저장
-    useEffect(() => {
-        const onReply = (e) => {
-            const { action, ok, data } = e.detail || {};
-            if (action === 'ORDER_COMPLETED' && ok && data?.orderNumber) {
-                const no = String(data.orderNumber);
-                setOrderNumber(no);
-                try { sessionStorage.setItem('lastOrderNumber', no); } catch { }
+        const passType =
+            q.passType ??
+            SK.passType ??
+            'cash';
+
+        const description =
+            q.desc ??
+            SK?.selectedTicket?.name ??
+            '캐시 이용권 4만원';
+
+        const amountRaw =
+            q.amount ??
+            SK?.selectedTicket?.price ??
+            45000;
+
+        // 금액 숫자화
+        const amount =
+            typeof amountRaw === 'number'
+                ? amountRaw
+                : Number(String(amountRaw).replace(/[^\d]/g, '')) || 0;
+
+        const orderNumber =
+            q.orderNumber ??
+            (SK?.lastOrderNumber || SK?.order?.id) ??
+            '20250908000014';
+
+        const paidAt =
+            q.date ??
+            SK?.paidAt ??
+            formatDateTime(new Date());
+
+        return { storeName, passType, description, amount, orderNumber, paidAt };
+    }, []);
+
+    // RN 홈 탭으로 이동 (웹 폴백 포함)
+    const goHome = () => {
+        try {
+            // 1) 권장: RN에서 주입한 헬퍼가 있으면 사용
+            if (typeof window !== 'undefined' && typeof window.__askRN === 'function') {
+                window.__askRN('GO_HOME', { tab: 'HomeTab' });
+                return;
             }
-        };
-        window.addEventListener('skysunny:reply', onReply);
-
-        // 새로고침 대비
-        if (!orderNumber) {
-            try {
-                const saved = sessionStorage.getItem('lastOrderNumber');
-                if (saved) setOrderNumber(saved);
-            } catch { }
+            // 2) 일반 브리지 (ReactNativeWebView)로 직접 전송
+            if (typeof window !== 'undefined' &&
+                window.ReactNativeWebView &&
+                typeof window.ReactNativeWebView.postMessage === 'function') {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ action: 'GO_HOME', tab: 'HomeTab' }));
+                return;
+            }
+            // 3) 웹에서 테스트할 때는 루트로 이동
+            if (typeof window !== 'undefined') {
+                window.location.replace(`${window.location.origin}/`);
+            }
+        } catch (e) {
+            console.log('[CompletePayment] goHome error', e);
         }
-
-        return () => window.removeEventListener('skysunny:reply', onReply);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    // 표시값(검증/조회 없이 최소치만)
-    const draft = useMemo(() => {
-        try { return JSON.parse(sessionStorage.getItem('toss:draft') || 'null'); } catch { return null; }
-    }, []);
-    const amount = draft?.amount ?? SK?.selectedTicket?.price ?? SK?.selectedTicket?.amount ?? '-';
-    const description = draft?.orderName ?? SK?.selectedTicket?.name ?? SK?.selectedTicket?.title ?? '-';
-    const storeName = SK?.storeName ?? '-';
-    const passType = SK?.passType ?? '-';
-
-    const toMoney = (v) => {
-        const n = Number(String(v ?? '').replace(/[^\d.-]/g, ''));
-        return Number.isFinite(n) ? `${n.toLocaleString()}원` : (v ?? '-');
     };
 
+    // 버튼 동작(목업): 실제 RN 브릿지가 없으면 콘솔만
     const movePage = (screen) => {
-        const storeId = defaultStoreId;
-        if (typeof window.__askRN === 'function') {
-            if (screen === 'StoreDetail') {
-                window.__askRN('GO_STORE_DETAIL', { storeId });
-            } else {
-                window.__askRN('GO_' + screen.toUpperCase(), { storeId });
-            }
-        } else {
-            console.log('RN bridge missing:', screen);
-        }
+        console.log(`[mock] movePage → ${screen}`, { ctx });
+        // 필요하면 다른 화면도 비슷한 방식으로 브리지 호출 가능:
+        // if (typeof window.__askRN === 'function') window.__askRN('GO_' + screen.toUpperCase(), {});
     };
 
     return (
@@ -71,12 +120,12 @@ export default function CompletePayment() {
                 <span className="notice-text font-bm">결제가 완료되었습니다.</span>
             </div>
 
-            {/* 정보 카드 (최소 정보 표시) */}
+            {/* 정보 카드 */}
             <div className="info-card">
-                <div className="info-row"><span className="title">매장명</span><span className="text">{storeName}</span></div>
-                <div className="info-row"><span className="title">이용권</span><span className="text">{passType}</span></div>
-                <div className="info-row"><span className="title">상품정보</span><span className="text">{description}</span></div>
-                <div className="info-row"><span className="title">이용금액</span><span className="text">{toMoney(amount)}</span></div>
+                <div className="info-row"><span className="title">매장명</span><span className="text">{ctx.storeName}</span></div>
+                <div className="info-row"><span className="title">이용권</span><span className="text">{ctx.passType}</span></div>
+                <div className="info-row"><span className="title">상품정보</span><span className="text">{ctx.description}</span></div>
+                <div className="info-row"><span className="title">이용금액</span><span className="text">{toMoney(ctx.amount)}</span></div>
 
                 <div className="info-row"><span className="title">이용기간</span><span className="text">-</span></div>
 
@@ -84,9 +133,9 @@ export default function CompletePayment() {
 
                 <div className="info-row"><span className="title">이용정보</span><span className="text">-</span></div>
                 <div className="info-row"><span className="title">1일 이용정보</span><span className="text">-</span></div>
-                <div className="info-row"><span className="title">주문번호</span><span className="text">{orderNumber ?? '-'}</span></div>
-                <div className="info-row"><span className="title">결제일시</span><span className="text">-</span></div>
-                <div className="info-row"><span className="title">결제금액</span><span className="text">{toMoney(amount)}</span></div>
+                <div className="info-row"><span className="title">주문번호</span><span className="text">{ctx.orderNumber}</span></div>
+                <div className="info-row"><span className="title">결제일시</span><span className="text">{ctx.paidAt}</span></div>
+                <div className="info-row"><span className="title">결제금액</span><span className="text">{toMoney(ctx.amount)}</span></div>
             </div>
 
             {/* 입장하기 */}
@@ -96,9 +145,9 @@ export default function CompletePayment() {
                 </button>
             </div>
 
-            {/* 닫기 → 무조건 StoreDetail */}
+            {/* 닫기 → HomeTab 이동 */}
             <div className="bottom-bar">
-                <button className="bottom-btn" onClick={() => movePage("StoreDetail")}>
+                <button className="bottom-btn" onClick={goHome}>
                     닫기
                 </button>
             </div>
