@@ -40,7 +40,28 @@ export default function CheckPayment() {
             document.dispatchEvent(ev);
         }
 
-        return () => document.removeEventListener('skysunny:init', onInit);
+        // RN → WEB 알림/스냅샷 로그 처리
+        const onMessage = (e) => {
+            try {
+                const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+                if (!data) return;
+                if (data.action === 'WEB_ALERT') {
+                    console.log('[CheckPayment:web] WEB_ALERT msg=', data?.payload?.msg);
+                    console.log('[CheckPayment:web] WEB_ALERT skysunny=', data?.payload?.skysunny);
+                }
+                if (data.action === 'WEB_SKYSUNNY_SNAPSHOT') {
+                    console.log('[CheckPayment:web] WEB_SKYSUNNY_SNAPSHOT =', data?.payload?.skysunny);
+                }
+            } catch (err) {
+                console.warn('[CheckPayment:web] message parse error', err);
+            }
+        };
+        window.addEventListener('message', onMessage);
+
+        return () => {
+            document.removeEventListener('skysunny:init', onInit);
+            window.removeEventListener('message', onMessage);
+        };
     }, []);
 
     useEffect(() => {
@@ -49,6 +70,7 @@ export default function CheckPayment() {
         }
     }, [location.state?.selectedCoupon]);
 
+    // ===== 공통 유틸 =====
     const parseAmount = useCallback((v) => {
         if (v == null) return 0;
         if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
@@ -56,48 +78,77 @@ export default function CheckPayment() {
         const num = Number(n);
         return Number.isFinite(num) ? num : 0;
     }, []);
-    const price = useMemo(() => parseAmount(ticketInfo?.selectedTicket?.price), [ticketInfo, parseAmount]);
-    const discount = useMemo(() => parseAmount(selectedCoupon?.amount), [selectedCoupon, parseAmount]);
-    const totalAmount = useMemo(() => Math.max(price - discount, 0), [price, discount]);
-    const finalAmount = useMemo(() => totalAmount.toLocaleString() + '원', [totalAmount]);
 
-    const passKind = useMemo(() => String(ticketInfo?.passType || '').toLowerCase(), [ticketInfo?.passType]);
-    const passTypeLabel = useMemo(() => {
-        switch (passKind) {
+    // passKind (분기 기준)
+    const passKind = useMemo(
+        () => String(ticketInfo?.passType || ticketInfo?.type || '').toLowerCase(),
+        [ticketInfo]
+    );
+
+    // 기존 라벨(비-스터디룸용)
+    const legacyPassTypeLabel = useMemo(() => {
+        const k = String(ticketInfo?.passType || '').toLowerCase();
+        switch (k) {
             case 'cash': return '캐시정기권';
             case 'free': return '기간정기권 (자유석)';
             case 'fix': return '기간정기권 (고정석)';
             case '1day': return '1일 이용권';
+            case 'locker': return '사물함';
             default: return ticketInfo?.passType || '-';
         }
-    }, [passKind, ticketInfo?.passType]);
+    }, [ticketInfo?.passType]);
 
+    // ===== 스터디룸 전용 정규화 =====
+    const normalizedStudy = useMemo(() => {
+        if (passKind !== 'studyroom') return null;
+        const t = ticketInfo ?? {};
+
+        const storeName = t.storeName ?? t.store ?? '-';
+        const roomName = t.roomName ?? t.productName ?? '-';
+
+        const usageAmountValue = parseAmount(t.priceValue ?? t.totalAmount ?? t.price);
+        const usageAmountText = usageAmountValue ? `${usageAmountValue.toLocaleString()}원` : '-';
+
+        const period = t.period ?? t.usagePeriod ?? t.dateRange ?? '-';
+        const usageInfo = t.usageInfo ?? period ?? '-';
+
+        return {
+            storeName,
+            passTypeLabel: '스터디룸',
+            productName: roomName,
+            usageAmountValue,
+            usageAmountText,
+            period,
+            usageInfo,
+        };
+    }, [ticketInfo, passKind, parseAmount]);
+
+    // ===== 할인 & 결제금액 =====
+    const legacyPrice = useMemo(
+        () => parseAmount(ticketInfo?.selectedTicket?.price),
+        [ticketInfo, parseAmount]
+    );
+
+    const discount = useMemo(
+        () => parseAmount(selectedCoupon?.amount ?? selectedCoupon?.discount),
+        [selectedCoupon, parseAmount]
+    );
+
+    const finalAmount = useMemo(() => {
+        if (passKind === 'studyroom') {
+            const base = normalizedStudy?.usageAmountValue ?? 0;
+            return `${Math.max(base - discount, 0).toLocaleString()}원`;
+        }
+        const total = Math.max(legacyPrice - discount, 0);
+        return `${total.toLocaleString()}원`;
+    }, [passKind, normalizedStudy, legacyPrice, discount]);
+
+    // 조건부 표시
     const showSeatDiscount = passKind === 'cash';
     const showOneDayInfo = passKind === '1day';
 
+    // RN draft 요청
     const needsTarget = (t) => t === 'fix' || t === 'locker';
-
-    // ===== 이벤트 정규화 + 디버그 =====
-    const normalize = (raw) => {
-        const d = raw?.detail ?? raw ?? {};
-        const action = d.action || d.type;
-        const ok = !!d.ok;
-        const orderNumber =
-            d.orderNumber ??
-            d?.data?.orderNumber ??
-            d?.payload?.orderNumber ??
-            d?.detail?.orderNumber ??
-            null;
-        const error =
-            d.error ??
-            d?.data?.error ??
-            d?.payload?.error ??
-            null;
-        const data = d.data ?? d.payload ?? d.detail ?? d;
-        return { action, ok, orderNumber, error, data, raw: d };
-    };
-
-    // RN 통해 임시주문 생성
     const requestDraftViaRN = () =>
         new Promise((resolve, reject) => {
             if (typeof window.__askRN !== 'function') {
@@ -119,8 +170,10 @@ export default function CheckPayment() {
 
             const targetId = needsTarget(passKind) ? Number(providedTarget || 0) : 0;
 
-            if (!passId) { reject(new Error('상품 ID(passId)가 없습니다.')); return; }
-            if (needsTarget(passKind) && !targetId) { reject(new Error('좌석/사물함 선택이 필요합니다.')); return; }
+            if (passKind !== 'studyroom') {
+                if (!passId) { reject(new Error('상품 ID(passId)가 없습니다.')); return; }
+                if (needsTarget(passKind) && !targetId) { reject(new Error('좌석/사물함 선택이 필요합니다.')); return; }
+            }
 
             let settled = false;
             const done = (fn) => (arg) => {
@@ -135,6 +188,24 @@ export default function CheckPayment() {
             };
             const resolveOnce = done(resolve);
             const rejectOnce = done(reject);
+
+            const normalize = (raw) => {
+                const d = raw?.detail ?? raw ?? {};
+                const action = d.action || d.type;
+                const ok = !!d.ok;
+                const orderNumber =
+                    d.orderNumber ??
+                    d?.data?.orderNumber ??
+                    d?.payload?.orderNumber ??
+                    null;
+                const error =
+                    d.error ??
+                    d?.data?.error ??
+                    d?.payload?.error ??
+                    null;
+                const data = d.data ?? d.payload ?? d.detail ?? d;
+                return { action, ok, orderNumber, error, data, raw: d };
+            };
 
             const onCustomReply = (e) => {
                 const n = normalize(e);
@@ -171,9 +242,7 @@ export default function CheckPayment() {
 
             const timer = setTimeout(() => { rejectOnce(new Error('임시 주문 응답 타임아웃')); }, 7000);
 
-            console.log('[CheckPayment:web] REQUEST_DRAFT →', {
-                passId, targetId, type: passKind || 'cash'
-            });
+            console.log('[CheckPayment:web] REQUEST_DRAFT →', { passId, targetId, type: passKind || 'cash' });
             window.__askRN('REQUEST_DRAFT', { passId, targetId, type: passKind || 'cash' });
         });
 
@@ -185,19 +254,16 @@ export default function CheckPayment() {
         }
         try {
             console.log('[CheckPayment:web] onClickBuy → requestDraftViaRN()');
-            const draft = await requestDraftViaRN(); // { orderNumber, ... }
+            const draft = await requestDraftViaRN();
             console.log('[CheckPayment:web] draft resolved =', draft);
 
-            // 결제 전 상태 저장
             sessionStorage.setItem('toss:draft', JSON.stringify(draft));
             sessionStorage.setItem('toss:successUrl', successUrl);
             sessionStorage.setItem('toss:failUrl', failUrl);
 
-            // 기본: 라우터로 이동
             console.log('[CheckPayment:web] navigate(/toss-payment)');
             movePage('/toss-payment');
 
-            // 폴백: 라우터가 없거나 경로 매칭 실패 시 강제 이동
             setTimeout(() => {
                 const pathOk =
                     window.location.pathname.includes('toss') ||
@@ -250,37 +316,63 @@ export default function CheckPayment() {
                     </div>
 
                     <div className="info-box">
-                        <div className="info-row"><span className="info-title">매장명</span><span className="info-text">{ticketInfo?.storeName || '-'}</span></div>
-                        <div className="info-row"><span className="info-title">이용권</span><span className="info-text">{passTypeLabel}</span></div>
-                        <div className="info-row"><span className="info-title">상품정보</span><span className="info-text">{ticketInfo?.selectedTicket?.name || '-'}</span></div>
-                        <div className="info-row"><span className="info-title">이용금액</span><span className="info-text">{ticketInfo?.selectedTicket?.price || '-'}</span></div>
-                        {passKind === 'cash' && (
-                            <div className="info-row"><span className="info-title">좌석당 할인율</span><span className="info-text">{ticketInfo?.selectedTicket?.subDescription || '-'}</span></div>
+                        {passKind === 'studyroom' ? (
+                            <>
+                                <div className="info-row"><span className="info-title">매장명</span><span className="info-text">{normalizedStudy?.storeName}</span></div>
+                                <div className="info-row"><span className="info-title">이용권</span><span className="info-text">{normalizedStudy?.passTypeLabel}</span></div>
+                                <div className="info-row"><span className="info-title">상품정보</span><span className="info-text">{normalizedStudy?.productName}</span></div>
+                                <div className="info-row"><span className="info-title">이용금액</span><span className="info-text">{normalizedStudy?.usageAmountText}</span></div>
+                                <div className="info-row"><span className="info-title">이용기간</span><span className="info-text">{normalizedStudy?.period}</span></div>
+                                <div className="info-row"><span className="info-title">이용정보</span><span className="info-text">{normalizedStudy?.usageInfo}</span></div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="info-row"><span className="info-title">매장명</span><span className="info-text">{ticketInfo?.storeName || '-'}</span></div>
+                                <div className="info-row"><span className="info-title">이용권</span><span className="info-text">{legacyPassTypeLabel}</span></div>
+                                <div className="info-row"><span className="info-title">상품정보</span><span className="info-text">{ticketInfo?.selectedTicket?.name || '-'}</span></div>
+                                <div className="info-row"><span className="info-title">이용금액</span><span className="info-text">{ticketInfo?.selectedTicket?.price || '-'}</span></div>
+                                {passKind === 'cash' && (
+                                    <div className="info-row"><span className="info-title">좌석당 할인율</span><span className="info-text">{ticketInfo?.selectedTicket?.subDescription || '-'}</span></div>
+                                )}
+                                <div className="info-row"><span className="info-title">이용기간</span><span className="info-text">{ticketInfo?.selectedTicket?.reward || '-'}</span></div>
+                                {passKind === 'locker' && (
+                                    <div className="info-row"><span className="info-title">이용정보</span><span className="info-text">24.07.01 14:00~16:30</span></div>
+                                )}
+                                {passKind === 'free' && (
+                                    <div className="info-row"><span className="info-title">1일 이용정보</span><span className="info-text">38,200캐시</span></div>
+                                )}
+                            </>
                         )}
-                        <div className="info-row"><span className="info-title">이용기간</span><span className="info-text">{ticketInfo?.selectedTicket?.reward || '-'}</span></div>
-                        <div className="info-row"><span className="info-title">이용정보</span><span className="info-text">24.07.01 14:00~16:30</span></div>
-                        {passKind === '1day' && (
-                            <div className="info-row"><span className="info-title">1일 이용정보</span><span className="info-text">38,200캐시</span></div>
-                        )}
+
                         <hr className="line" />
+
                         <div className="info-row">
                             <span className="info-title">할인쿠폰</span>
                             <button className="coupon-btn" onClick={() => movePage('/check-coupon')}>쿠폰선택</button>
                         </div>
+
                         <div className="info-row">
                             {selectedCoupon && (
                                 <>
                                     <div className="info-text">{selectedCoupon.title}</div>
                                     <div className="info-img">
-                                        <img src={close} alt="쿠폰삭제" className="icon24" style={{ cursor: 'pointer' }} onClick={() => setSelectedCoupon(null)} />
+                                        <img
+                                            src={close}
+                                            alt="쿠폰삭제"
+                                            className="icon24"
+                                            style={{ cursor: 'pointer' }}
+                                            onClick={() => setSelectedCoupon(null)}
+                                        />
                                     </div>
                                 </>
                             )}
                         </div>
+
                         <hr className="dashed-line" />
+
                         <div className="info-row">
                             <span className="info-title">할인금액</span>
-                            {selectedCoupon && <span className="info-text">{selectedCoupon.amount}</span>}
+                            {selectedCoupon && <span className="info-text">{(parseAmount(selectedCoupon.amount)).toLocaleString()}원</span>}
                         </div>
                     </div>
                 </div>
@@ -290,10 +382,16 @@ export default function CheckPayment() {
                     <span className="font-bm section-title">결제수단</span>
                 </div>
                 <div className="payment-methods">
-                    <button className={`payment-btn ${paymentMethod === 'card' ? 'active' : ''}`} onClick={() => setPaymentMethod('card')}>
+                    <button
+                        className={`payment-btn ${paymentMethod === 'card' ? 'active' : ''}`}
+                        onClick={() => setPaymentMethod('card')}
+                    >
                         <span className="payment-text">신용/체크카드</span>
                     </button>
-                    <button className={`payment-btn ${paymentMethod === 'bank' ? 'active' : ''}`} onClick={() => setPaymentMethod('bank')}>
+                    <button
+                        className={`payment-btn ${paymentMethod === 'bank' ? 'active' : ''}`}
+                        onClick={() => setPaymentMethod('bank')}
+                    >
                         <span className="payment-text">무통장입금</span>
                     </button>
                 </div>
