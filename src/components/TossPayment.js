@@ -107,7 +107,7 @@ const TossPayment = () => {
         );
 
         const failUrl = coerceWebUrl(
-            SK?.failUrl || q.failUrl || `${window.location.origin}/complete-payment?fail=1`,
+            SK?.failUrl || q.failUrl || `${window.location.origin}/complete-payment?fail=1&orderNumber=${encodeURIComponent(order.id)}`,
             "/complete-payment?fail=1"
         );
 
