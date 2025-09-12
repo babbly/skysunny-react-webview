@@ -409,9 +409,9 @@ export default function CheckPayment() {
                                 )}
 
                                 {/* 고정석, 1일 이용권, 캐시권: 이용정보 표시 */}
-                                {(passKind === 'fix' || passKind === '1day' || passKind === 'cash') && (
+                                {/* {(passKind === 'fix' || passKind === '1day' || passKind === 'cash') && (
                                     <div className="info-row"><span className="info-title">이용정보</span><span className="info-text">{ticketInfo?.usageInfo || '-'}</span></div>
-                                )}
+                                )} */}
                             </>
                         )}
 
