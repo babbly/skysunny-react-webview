@@ -83,14 +83,19 @@ const TossPayment = () => {
             SK?.tossClientKey ||
             (typeof import.meta !== "undefined" &&
                 (import.meta.env?.VITE_TOSS_CLIENT_KEY_TEST || import.meta.env?.VITE_TOSS_CLIENT_KEY)) ||
+            (typeof process !== "undefined" &&
+                (process.env?.REACT_APP_TOSS_CLIENT_KEY_TEST || process.env?.REACT_APP_TOSS_CLIENT_KEY)) ||
             q.tossClientKey ||
+            // 테스트용 기본 키 (실제 운영에서는 제거 필요)
+            "test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq" ||
             undefined;
 
         const customerKey =
             SK?.userId ||
             q.userId ||
             (typeof localStorage !== "undefined" && localStorage.getItem("userId")) ||
-            `guest_${Math.random().toString(36).slice(2)}`;
+            (typeof localStorage !== "undefined" && localStorage.getItem("accessToken") && "authenticated_user") ||
+            `guest_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
         // (A) 성공/실패 URL은 반드시 웹 URL로 강제
         const successUrl = coerceWebUrl(
