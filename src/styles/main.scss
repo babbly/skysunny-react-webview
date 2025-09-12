@@ -184,6 +184,7 @@ $font26: 26px;
                 display: flex;
                 justify-content: space-between;
                 margin-bottom: 12px;
+                // border: 1px solid #000;
 
                 &:last-child {
                     margin-bottom: 0;
@@ -218,6 +219,15 @@ $font26: 26px;
                 border-top: 1px dashed;
                 border-color: $gray200;
                 margin: 12px 0;
+            }
+
+            .coupon-guide-text {
+                margin-bottom: -5px !important;
+
+            }
+
+            .coupon-guide-text1 {
+                color: $gray600;
             }
 
             .coupon-btn {
