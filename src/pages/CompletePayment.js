@@ -1,6 +1,5 @@
 // src/web/CompletePayment.jsx
 import { useEffect, useMemo, useState } from 'react';
-import { httpGet, httpPost, httpUrl } from '../api/httpClient';
 import infoIcon from "../img/home/payment.png";
 import '../styles/main.scss';
 
@@ -156,131 +155,64 @@ export default function CompletePayment() {
         return finalOrderNumber;
     }, []);
 
-    // 2) API 호출
+    // 2) RN에서 결제 완료 데이터 받기
     useEffect(() => {
         let mounted = true;
+
         const load = async () => {
-            if (!orderNumber) {
-                const debugInfo = {
-                    queryParams: typeof window !== 'undefined' ? Object.fromEntries(new URLSearchParams(window.location.search).entries()) : {},
-                    sessionDraft: typeof window !== 'undefined' ? sessionStorage.getItem('toss:draft') : null,
-                    skysunny: typeof window !== 'undefined' ? window.SKYSUNNY : null,
-                    localStorage: typeof window !== 'undefined' ? localStorage.getItem('lastOrderNumber') : null
-                };
-                console.error('[CompletePayment] 주문번호를 찾을 수 없습니다. 디버그 정보:', debugInfo);
-                setErrMsg(`주문번호가 없습니다.\n\nURL 파라미터: ${Object.keys(debugInfo.queryParams).length ? JSON.stringify(debugInfo.queryParams) : '없음'}\nSession draft: ${debugInfo.sessionDraft ? '있음' : '없음'}\nSKYSUNNY: ${debugInfo.skysunny ? '있음' : '없음'}`);
-                setLoading(false);
-                return;
-            }
-            // URL 구성: %s를 orderNumber로 치환 (try 블록 밖에서 정의)
-            const url = httpUrl.completePay.replace('%s', encodeURIComponent(orderNumber));
+            console.log('[CompletePayment] RN에서 결제 완료 데이터를 받는 중...');
 
-            try {
-                console.log('[CompletePayment] orderNumber:', orderNumber);
-                console.log('[CompletePayment] httpUrl.completePay:', httpUrl.completePay);
-
-                // sessionStorage에서 추가 데이터 가져오기
-                let additionalData = {};
+            // RN에서 결제 완료 데이터를 받기 위한 이벤트 리스너
+            const handlePaymentComplete = (event) => {
                 try {
-                    const draftStr = typeof window !== 'undefined' ? sessionStorage.getItem('toss:draft') : null;
-                    if (draftStr) {
-                        const draft = JSON.parse(draftStr);
-                        additionalData = {
-                            userId: draft.userId,
-                            seatId: draft.seatId,
-                            storeId: draft.storeId,
-                            storeName: draft.storeName,
-                            passType: draft.passType,
-                            productName: draft.productName,
-                            price: draft.price,
-                            roomName: draft.roomName,
-                            selectedDate: draft.selectedDate,
-                            period: draft.period,
-                            usageInfo: draft.usageInfo,
-                            couponId: draft.couponId,
-                            couponAmount: draft.couponAmount,
-                            paymentMethod: draft.paymentMethod,
-                            finalAmount: draft.finalAmount
-                        };
-                        console.log('[CompletePayment] sessionStorage에서 가져온 추가 데이터:', additionalData);
+                    const paymentData = event.detail || event.data || event;
+                    console.log('[CompletePayment] RN에서 받은 결제 완료 데이터:', paymentData);
+
+                    if (paymentData && paymentData.orderNumber) {
+                        setData(paymentData);
+                        setLoading(false);
+                    } else {
+                        console.warn('[CompletePayment] 결제 완료 데이터가 올바르지 않습니다:', paymentData);
+                        setErrMsg('결제 완료 데이터를 받지 못했습니다.');
+                        setLoading(false);
                     }
-                } catch (e) {
-                    console.warn('[CompletePayment] sessionStorage 데이터 파싱 오류:', e);
+                } catch (error) {
+                    console.error('[CompletePayment] 결제 완료 데이터 처리 오류:', error);
+                    setErrMsg('결제 완료 데이터 처리 중 오류가 발생했습니다.');
+                    setLoading(false);
                 }
+            };
 
-                console.log('[CompletePayment] API URL:', httpUrl.completePay);
-                console.log('[CompletePayment] orderNumber:', orderNumber);
-                console.log('[CompletePayment] orderNumber 타입:', typeof orderNumber);
-                console.log('[CompletePayment] orderNumber 길이:', orderNumber?.length);
-                console.log('[CompletePayment] 최종 URL:', url);
-                console.log('[CompletePayment] 전체 URL:', `https://skysunny-api.mayoube.co.kr${url}`);
-
-                // 1) 먼저 GET 방식으로 결제 완료 정보 조회
-                const res = await httpGet(url);
-                console.log('[CompletePayment] GET API 응답:', res);
-
-                if (!mounted) return;
-
-                // 2) 추가 정보가 있으면 POST로 주문 정보 업데이트
-                if (Object.keys(additionalData).some(key => additionalData[key] !== null && additionalData[key] !== undefined)) {
-                    try {
-                        const updatePayload = {
-                            orderNumber,
-                            ...additionalData
-                        };
-                        console.log('[CompletePayment] POST 업데이트 페이로드:', updatePayload);
-
-                        const updateRes = await httpPost(httpUrl.updateOrder, null, updatePayload);
-                        console.log('[CompletePayment] POST 업데이트 응답:', updateRes);
-
-                        if (updateRes?.code !== 100) {
-                            console.warn('[CompletePayment] 주문 정보 업데이트 실패:', updateRes);
-                        }
-                    } catch (updateError) {
-                        console.error('[CompletePayment] 주문 정보 업데이트 오류:', updateError);
-                        // 업데이트 실패해도 결제 조회는 성공했으므로 계속 진행
-                    }
+            // 다양한 이벤트 리스너 등록
+            document.addEventListener('payment:complete', handlePaymentComplete);
+            document.addEventListener('skysunny:payment:complete', handlePaymentComplete);
+            window.addEventListener('message', (event) => {
+                if (event.data && event.data.type === 'PAYMENT_COMPLETE') {
+                    handlePaymentComplete(event);
                 }
+            });
 
-                if (res?.code === 100 && res?.result) {
-                    console.log('[CompletePayment] API 성공, 데이터 설정:', res.result);
-                    setData(res.result);
-                } else {
-                    console.error('[CompletePayment] API 응답 오류:', { code: res?.code, message: res?.message, result: res?.result });
-                    setErrMsg(res?.message || '결제 정보를 불러오지 못했습니다.');
-                }
-            } catch (e) {
-                console.error('[CompletePayment] api error 상세:', {
-                    message: e?.message,
-                    response: e?.response,
-                    status: e?.response?.status,
-                    statusText: e?.response?.statusText,
-                    data: e?.response?.data,
-                    stack: e?.stack,
-                    url: url,
-                    orderNumber: orderNumber
-                });
-
-                // 더 구체적인 에러 메시지 제공
-                let errorMessage = '알 수 없는 오류가 발생했습니다.';
-
-                if (e?.message === 'Network Error') {
-                    errorMessage = `서버에 연결할 수 없습니다.\n\n확인사항:\n1. 인터넷 연결 상태\n2. 서버 상태\n3. 주문번호: ${orderNumber}`;
-                } else if (e?.response?.status === 404) {
-                    errorMessage = `주문 정보를 찾을 수 없습니다.\n주문번호: ${orderNumber}`;
-                } else if (e?.response?.status === 401) {
-                    errorMessage = '로그인이 필요합니다. 다시 로그인해주세요.';
-                } else if (e?.response?.status >= 500) {
-                    errorMessage = '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
-                } else if (e?.message) {
-                    errorMessage = e.message;
-                }
-
-                setErrMsg(errorMessage);
-            } finally {
-                if (mounted) setLoading(false);
+            // RN 브리지 콜백 등록
+            if (typeof window.__askRN === 'function') {
+                window.__askRN('REQUEST_PAYMENT_COMPLETE', { orderNumber });
             }
+
+            // 타임아웃 설정 (10초 후 에러 처리)
+            const timeout = setTimeout(() => {
+                if (mounted) {
+                    console.warn('[CompletePayment] 결제 완료 데이터 수신 타임아웃');
+                    setErrMsg('결제 완료 데이터를 받는 데 시간이 오래 걸리고 있습니다. 잠시 후 다시 시도해주세요.');
+                    setLoading(false);
+                }
+            }, 10000);
+
+            return () => {
+                document.removeEventListener('payment:complete', handlePaymentComplete);
+                document.removeEventListener('skysunny:payment:complete', handlePaymentComplete);
+                clearTimeout(timeout);
+            };
         };
+
         load();
         return () => { mounted = false; };
     }, [orderNumber]);
