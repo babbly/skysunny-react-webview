@@ -9,7 +9,7 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Navigate to="/coupon" />} />
+        <Route path="/" element={<Navigate to="/check-payment" />} />
         <Route path="/check-payment" element={<CheckPayment />} />
         <Route path="/complete-payment" element={<CompletePayment />} />
         <Route path="/check-coupon" element={<CheckCoupon />} />
