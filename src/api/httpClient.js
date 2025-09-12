@@ -65,9 +65,13 @@ const getRequestConfig = async () => {
     const token = localStorage.getItem('accessToken');
     return {
         withCredentials: true,
+        timeout: 30000, // 30초 타임아웃
         headers: {
             Accept: 'application/json; charset=utf-8',
             'Content-Type': 'application/json; charset=utf-8',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
             ...(token ? { Authorization: `Bearer ${token}` } : {}), // ✅ 토큰 있으면 추가
         },
     };
@@ -79,14 +83,27 @@ const httpGet = async (url, params, data, hideLoading) => {
 
     try {
         const config = await getRequestConfig();
-        const response = await Axios.get(makeUrl(url, params), {
+        const fullUrl = makeUrl(url, params);
+        console.log("httpGet - Full URL:", fullUrl);
+        console.log("httpGet - Config:", config);
+        console.log("httpGet - Params:", data || {});
+
+        const response = await Axios.get(fullUrl, {
             ...config,
             params: data || {}
         });
         if (!hideLoading) loadingEnd();
+        console.log("httpGet - Response:", response.data);
         return response.data;
     } catch (error) {
         if (!hideLoading) loadingEnd();
+        console.error("httpGet - Error details:", {
+            message: error.message,
+            code: error.code,
+            response: error.response,
+            request: error.request,
+            config: error.config
+        });
         return errorReject(hideLoading, null, url)(error);
     }
 };
@@ -129,7 +146,6 @@ const serverUrl = 'https://skysunny-api.mayoube.co.kr';
 
 const httpUrl = {
     qrCode: '/user/qr-code/%s',
-    completePay: '/user/order/completed?orderNumber=%s',  // GET: 결제 완료 정보 조회
     updateOrder: '/user/order/update',  // POST: 주문 정보 업데이트 (사용자, 좌석 등 추가 정보)
 };
 
@@ -149,21 +165,42 @@ function errorReject(hideLoading, reject, url) {
         const status = error?.response?.status;
         const statusText = error?.response?.statusText;
         const responseData = error?.response?.data;
+        const isNetworkError = error?.message === 'Network Error' || error?.code === 'NETWORK_ERROR' || error?.code === 'ERR_NETWORK';
 
         console.log('## 상세 오류 정보:', {
             status,
             statusText,
             responseData,
             url,
-            message: error?.message
+            message: error?.message,
+            code: error?.code,
+            isNetworkError,
+            request: error?.request,
+            config: error?.config
         });
 
-        if (status === 401) {
+        // Network Error 특별 처리
+        if (isNetworkError) {
+            console.error('## Network Error 상세 분석:', {
+                url: url,
+                fullUrl: makeUrl(url),
+                hasResponse: !!error?.response,
+                hasRequest: !!error?.request,
+                message: error?.message,
+                code: error?.code,
+                stack: error?.stack
+            });
+
+            alert(`네트워크 연결 오류가 발생했습니다.\n\n확인사항:\n1. 인터넷 연결 상태\n2. 서버 상태 (${makeUrl(url)})\n3. CORS 설정\n4. 방화벽 설정\n\nURL: ${url}\n에러: ${error?.message}`);
+        } else if (status === 401) {
             alert("장기간 미사용하여 자동 로그아웃 되었습니다! 다시 로그인해주세요.");
         } else if (status === 404) {
             alert(`API 엔드포인트를 찾을 수 없습니다.\nURL: ${url}\n상태: ${status} ${statusText}`);
         } else if (status >= 500) {
             alert(`서버 내부 오류가 발생했습니다.\nURL: ${url}\n상태: ${status} ${statusText}`);
+        } else if (status === 400) {
+            const errorMsg = responseData?.message || error?.message || '잘못된 요청입니다.';
+            alert(`잘못된 요청입니다.\n${errorMsg}\nURL: ${url}\n상태: ${status}`);
         } else {
             const errorMsg = responseData?.message || error?.message || '알 수 없는 오류';
             alert(`서버 요청 오류\n${errorMsg}\nURL: ${url}\n상태: ${status || 'Unknown'}`);
