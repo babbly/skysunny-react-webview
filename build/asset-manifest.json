@@ -1,0 +1,17 @@
+{
+  "files": {
+    "main.css": "/static/css/main.54ac9bb5.css",
+    "main.js": "/static/js/main.845d7128.js",
+    "static/media/NotoSansKR.ttf": "/static/media/NotoSansKR.c51b1f27913a7e547afd.ttf",
+    "static/media/BMDoHyeon.ttf": "/static/media/BMDoHyeon.d20f6c68004f7588ee16.ttf",
+    "static/media/payment.png": "/static/media/payment.1686f3b190c48f3e1588.png",
+    "static/media/noCoupon.png": "/static/media/noCoupon.45b01ba5f6c40579c41b.png",
+    "index.html": "/index.html",
+    "main.54ac9bb5.css.map": "/static/css/main.54ac9bb5.css.map",
+    "main.845d7128.js.map": "/static/js/main.845d7128.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.54ac9bb5.css",
+    "static/js/main.845d7128.js"
+  ]
+}
