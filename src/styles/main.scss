@@ -105,6 +105,53 @@ $font26: 26px;
         width: 100%;
     }
 
+    .banner-slider {
+        position: relative;
+        width: 100%;
+
+        .slider-wrapper {
+            display: flex;
+            overflow: hidden;
+            width: 100%;
+            border-radius: 0;
+            position: relative;
+
+            .slider-item {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                transition: transform 0.3s ease-in-out;
+
+                img {
+                    width: 100%;
+                    height: 80px;
+                    object-fit: cover;
+                    cursor: pointer;
+                    background-color: #eee;
+                }
+            }
+        }
+
+        .page-indicator {
+            position: absolute;
+            right: 10px;
+            bottom: 10px;
+
+            .counter-btn {
+                background-color: rgba(0, 0, 0, 0.6);
+                padding: 0px 8px;
+                border-radius: 6px;
+
+                .page-text {
+                    color: white;
+                    font-size: 10px;
+                }
+            }
+        }
+    }
+
     /* 구매 정보 */
     .info-container {
 
